@@ -27,6 +27,9 @@ from swebench.harness.constants import (
     RUN_EVALUATION_LOG_DIR,
     UTF8,
 )
+from swebench.harness.dagger_eval import (
+    run_instances_dagger,
+)
 from swebench.harness.docker_utils import (
     clean_images,
     cleanup_container,
@@ -453,6 +456,7 @@ def main(
     namespace: str | None,
     rewrite_reports: bool,
     modal: bool,
+    dagger: bool,
     instance_image_tag: str = "latest",
     report_dir: str = ".",
 ):
@@ -495,6 +499,14 @@ def main(
         else:
             validate_modal_credentials()
             run_instances_modal(predictions, dataset, full_dataset, run_id, timeout)
+        return
+
+    if dagger:
+        # run instances with Dagger
+        if not dataset:
+            print("No instances to run.")
+        else:
+            run_instances_dagger(predictions, dataset, full_dataset, run_id)
         return
 
     # run instances locally
@@ -612,6 +624,8 @@ if __name__ == "__main__":
 
     # Modal execution args
     parser.add_argument("--modal", type=str2bool, default=False, help="Run on Modal")
+    # Dagger execution args
+    parser.add_argument("--dagger", type=str2bool, default=False, help="Run with Dagger")
 
     args = parser.parse_args()
     main(**vars(args))
