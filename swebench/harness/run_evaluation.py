@@ -506,7 +506,9 @@ def main(
         if not dataset:
             print("No instances to run.")
         else:
-            run_instances_dagger(predictions, dataset, full_dataset, run_id)
+            run_instances_dagger(
+                predictions, dataset, full_dataset, run_id, max_workers, timeout
+            )
         return
 
     # run instances locally
