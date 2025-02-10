@@ -11,7 +11,7 @@ from pathlib import Path
 import anyio
 import dagger
 from anyio import to_thread
-from dagger import dag
+from dagger import dag, ReturnType
 
 from swebench.harness.constants import (
     APPLY_PATCH_FAIL,
@@ -242,9 +242,11 @@ async def _run_evaluation_script(
     for command in instance.test_spec.eval_script_list:
         # django hack
         command = command.replace("locale-gen", "locale-gen en_US.UTF-8")
-        ctr = ctr.with_exec(["bash", "-i", "-c", command])
+        ctr = ctr.with_exec(["bash", "-i", "-c", command], expect=ReturnType.ANY)
         test_output += f"+ {command}\n"
         test_output += await ctr.stdout()
+        if await ctr.exit_code() != 0:
+            break
 
     await anyio.Path(instance.log_dir / TEST_LOG_FILE).write_text(test_output)
 
