@@ -5,6 +5,7 @@ from __future__ import annotations
 import functools
 import json
 import logging
+import sys
 from dataclasses import dataclass
 from logging import Logger
 from pathlib import Path
@@ -204,7 +205,7 @@ async def _run_instance_patch(
     patched_ctr = ctr.with_exec(["git", "apply", "-v", patch_file])
 
     try:
-        apply_patch_output = await patched_ctr.stdout()
+        apply_patch_output = await patched_ctr.stderr()
     except dagger.ExecError:
         logger.info("Failed to apply patch to container, trying again...")
         patched_ctr = ctr.with_exec(
@@ -218,7 +219,7 @@ async def _run_instance_patch(
             ],
         )
         try:
-            apply_patch_output = await patched_ctr.stdout()
+            apply_patch_output = await patched_ctr.stderr()
         except dagger.ExecError as e:
             msg = f"{APPLY_PATCH_FAIL}:\n{e.stderr}"
             if e.stdout:
@@ -249,8 +250,6 @@ async def _run_evaluation_script(
         ctr = ctr.with_exec(["bash", "-i", "-c", command], expect=ReturnType.ANY)
         test_output += f"+ {command}\n"
         test_output += await ctr.stdout()
-        if await ctr.exit_code() != 0:
-            break
 
     await anyio.Path(instance.log_dir / TEST_LOG_FILE).write_text(test_output)
 
@@ -333,6 +332,7 @@ async def run_instances_dagger_async(
     limiter = anyio.CapacityLimiter(max_workers)
 
     cfg = dagger.Config()
+    cfg.log_output = sys.stderr
     cfg.console.quiet = True
 
     async with dagger.connection(cfg), anyio.create_task_group() as tg:
