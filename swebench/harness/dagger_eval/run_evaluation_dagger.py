@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import functools
 import json
+import logging
 from dataclasses import dataclass
 from logging import Logger
 from pathlib import Path
@@ -11,7 +12,7 @@ from pathlib import Path
 import anyio
 import dagger
 from anyio import to_thread
-from dagger import dag, ReturnType
+from dagger import ReturnType, dag
 
 from swebench.harness.constants import (
     APPLY_PATCH_FAIL,
@@ -29,6 +30,9 @@ RUN_LOG_FILE = "run_instance.log"
 TEST_LOG_FILE = "test_output.txt"
 PATCH_FILE = "patch.diff"
 REPORT_FILE = "report.json"
+
+
+logging.getLogger("httpx").setLevel(logging.ERROR)
 
 
 @dataclass
