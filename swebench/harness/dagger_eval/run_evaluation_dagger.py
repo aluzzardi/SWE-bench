@@ -6,6 +6,7 @@ import functools
 import json
 import logging
 import sys
+import time
 from dataclasses import dataclass
 from logging import Logger
 from pathlib import Path
@@ -243,6 +244,7 @@ async def _run_evaluation_script(
 
     logger.info("Git diff before:\n%s", git_diff_output_before)
 
+    start_time = time.time()
     test_output = ""
     for command in instance.test_spec.eval_script_list:
         # django hack
@@ -250,9 +252,12 @@ async def _run_evaluation_script(
         ctr = ctr.with_exec(["bash", "-i", "-c", command], expect=ReturnType.ANY)
         test_output += f"+ {command}\n"
         test_output += await ctr.stdout()
+        test_output += await ctr.stderr()
+
+    total_runtime = time.time() - start_time
+    logger.info(f'Test runtime: {total_runtime:_.2f} seconds')
 
     await anyio.Path(instance.log_dir / TEST_LOG_FILE).write_text(test_output)
-
     logger.info(
         "Test output for %s written to %s",
         instance.id,
