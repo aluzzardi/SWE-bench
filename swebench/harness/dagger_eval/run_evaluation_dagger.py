@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections import Counter
 import functools
 import json
 import logging
@@ -10,17 +9,13 @@ import time
 from dataclasses import dataclass
 from logging import Logger
 from pathlib import Path
-from typing import cast
 import sys
 
 import anyio
 import dagger
 from anyio import to_thread
-from dagger import ReturnType, dag
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.trace import get_tracer_provider
+from dagger import dag, telemetry
 from opentelemetry import trace
-from . import telemetry
 
 
 from swebench.harness.constants import (
@@ -28,7 +23,7 @@ from swebench.harness.constants import (
     APPLY_PATCH_PASS,
     RUN_EVALUATION_LOG_DIR,
 )
-from swebench.harness.constants.constants import KEY_INSTANCE_ID, SWEbenchInstance
+from swebench.harness.constants import KEY_INSTANCE_ID, SWEbenchInstance
 from swebench.harness.docker_build import close_logger, setup_logger
 from swebench.harness.grading import get_eval_report
 from swebench.harness.reporting import make_run_report
@@ -245,8 +240,6 @@ async def _run_evaluation_script(
 
     logger.info("Git diff before:\n%s", git_diff_output_before)
 
-    failures = Counter()
-
     start_time = time.time()
     test_output = ""
     for command in instance.test_spec.eval_script_list:
@@ -264,15 +257,12 @@ async def _run_evaluation_script(
                 ["bash", "--login", "-c", command],
                 redirect_stdout="/out",
                 redirect_stderr="/out",
-                expect=ReturnType.ANY,
+                expect=dagger.ReturnType.ANY,
             )
             test_output += f"+ {command}\n"
             test_output += await ctr.file("/out").contents()
-            code = await ctr.exit_code()
 
-            failures[bool(code)] += 1
-
-            if code:
+            if code := await ctr.exit_code():
                 error = trace.StatusCode.ERROR
                 span.set_status(error, f"command failed with exit code {code}")
 
@@ -280,12 +270,6 @@ async def _run_evaluation_script(
     logger.info(f"Test runtime: {total_runtime:_.2f} seconds")
 
     await anyio.Path(instance.log_dir / TEST_LOG_FILE).write_text(test_output)
-
-    if failures[True]:
-        trace.get_current_span().set_status(
-            trace.StatusCode.ERROR,
-            f"{failures[True]} command(s) failed (out of {failures.total()})",
-        )
 
     logger.info(
         "Test output for %s written to %s",
@@ -353,20 +337,22 @@ def run_instances_dagger(
         max_workers (int):
         timeout (int):
     """
-    anyio.run(
-        run_instances_dagger_async,
-        predictions,
-        instances,
-        run_id,
-        max_workers,
-        timeout,
-    )
-    make_run_report(
-        predictions,
-        full_dataset,
-        run_id,
-    )
-    cast(TracerProvider, get_tracer_provider()).shutdown()
+    try:
+        anyio.run(
+            run_instances_dagger_async,
+            predictions,
+            instances,
+            run_id,
+            max_workers,
+            timeout,
+        )
+        make_run_report(
+            predictions,
+            full_dataset,
+            run_id,
+        )
+    finally:
+        telemetry.shutdown()
 
 
 async def run_instances_dagger_async(
@@ -390,8 +376,10 @@ async def run_instances_dagger_async(
     limiter = anyio.CapacityLimiter(max_workers)
 
     cfg = dagger.Config()
-    cfg.log_output = sys.stderr
     cfg.console.quiet = True
+
+    if not telemetry.otel_configured():
+        cfg.log_output = sys.stderr
 
     async with dagger.connection(cfg), anyio.create_task_group() as tg:
         for instance in instances:
