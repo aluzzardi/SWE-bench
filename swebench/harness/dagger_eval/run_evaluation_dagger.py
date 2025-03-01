@@ -140,28 +140,20 @@ async def get_instance_image(test_spec: TestSpec) -> dagger.Container:
                 "build-essential",
                 "libffi-dev",
                 "libtiff-dev",
+                "python3",
+                "python3-pip",
+                "python-is-python3",
                 "jq",
                 "curl",
                 "locales",
                 "locales-all",
                 "tzdata",
-                "python3.11",
-            ]
-        )
-        .with_exec(
-            [
-                "update-alternatives",
-                "--install",
-                "/usr/bin/python",
-                "python",
-                "/usr/bin/python3.11",
-                "7",
             ]
         )
         .with_file(
             "miniconda.sh",
             dag.http(
-                "https://repo.anaconda.com/miniconda/Miniconda3-py311_23.11.0-2-Linux-aarch64.sh"
+                f"https://repo.anaconda.com/miniconda/Miniconda3-py311_23.11.0-2-Linux-{test_spec.arch}.sh"
             ),
         )
         .with_exec(["bash", "miniconda.sh", "-b", "-p", "/opt/miniconda3"])
@@ -175,7 +167,7 @@ async def get_instance_image(test_spec: TestSpec) -> dagger.Container:
             permissions=0o755,
         )
         .with_new_file("/root/setup_repo.sh", test_spec.install_repo_script)
-        .with_exec(["/root/setup_env.sh"])
+        .with_exec(["bash", "-c", "source ~/.bashrc && /root/setup_env.sh"])
         .with_exec(
             [
                 "bash",
@@ -254,13 +246,19 @@ async def _run_evaluation_script(
 
         with tracer.start_as_current_span(command) as span:
             ctr = ctr.with_exec(
-                ["bash", "--login", "-c", command],
-                redirect_stdout="/out",
-                redirect_stderr="/out",
+                [
+                    "conda",
+                    "run",
+                    "-n",
+                    "testbed",
+                    "bash",
+                    "-c",
+                    f"2>&1 {command}",
+                ],
                 expect=dagger.ReturnType.ANY,
             )
             test_output += f"+ {command}\n"
-            test_output += await ctr.file("/out").contents()
+            test_output += await ctr.stdout()
 
             if code := await ctr.exit_code():
                 error = trace.StatusCode.ERROR
