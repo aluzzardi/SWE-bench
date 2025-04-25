@@ -77,6 +77,9 @@ class Instance:
 
 @tracer.start_as_current_span("setup base container")
 async def _build_base_image(test_spec: TestSpec) -> dagger.Container:
+    if test_spec.is_remote_image:
+        return dag.container().from_(test_spec.instance_image_key)
+
     conda_arch = test_spec.arch
     if conda_arch == "arm64":
         conda_arch = "aarch64"
@@ -278,6 +281,7 @@ def run_instances_dagger(
     run_id: str,
     max_workers: int,
     timeout: int,
+    namespace: str = "swebench",
 ):
     """
     Run all instances for the given predictions on Dagger.
@@ -298,6 +302,7 @@ def run_instances_dagger(
             run_id,
             max_workers,
             timeout,
+            namespace,
         )
         make_run_report(
             predictions,
@@ -314,6 +319,7 @@ async def run_instances_dagger_async(
     run_id: str,
     max_workers: int,
     timeout: int,
+    namespace: str,
 ):
     """
     Run all instances for the given predictions on Dagger.
@@ -340,6 +346,7 @@ async def run_instances_dagger_async(
                 run_id,
                 timeout,
                 limiter,
+                namespace,
             )
 
 
@@ -349,6 +356,7 @@ async def run_instance_dagger(
     run_id: str,
     timeout: int,
     limiter: anyio.CapacityLimiter,
+    namespace: str,
 ):
     """
     Run a single instance with the given prediction.
@@ -360,7 +368,7 @@ async def run_instance_dagger(
         timeout (int): Timeout for running tests
     """
     async with limiter:
-        test_spec = await to_thread.run_sync(make_test_spec, bench_instance)
+        test_spec = await to_thread.run_sync(make_test_spec, bench_instance, namespace)
         instance = Instance(run_id, test_spec, pred)
         await instance.log_dir.mkdir(parents=True, exist_ok=True)
 
